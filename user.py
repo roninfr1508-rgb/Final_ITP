@@ -1,38 +1,59 @@
-import hashlib
-from datetime import datetime
+from services.db_service import DatabaseService
+from models.record import Record
+from models.user import User
 
-class User:
-    def __init__(self, user_id, username, password_hash, role, created_at=None):
-        self.id = user_id
-        self.username = username
-        self.password_hash = password_hash
-        self.role = role  # 'admin' или 'user'
-        self.created_at = created_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+db = DatabaseService()
+
+
+class UserController:
+    @staticmethod
+    def get_my_records(user_id):
+        """
+        Фильтрация: получить студентов, принадлежащих ТОЛЬКО текущему пользователю.
+        """
+        all_records = db.load_records()
+        return [r for r in all_records if r.user_id == int(user_id)]
 
     @staticmethod
-    def hash_password(password):
-        return hashlib.sha256(password.encode('utf-8')).hexdigest()
+    def add_record(user_id, name, age, group, gpa):
+        """
+        Добавление нового студента с жесткой привязкой к user_id создателя.
+        """
+        records = db.load_records()
+        new_id = max([r.id for r in records], default=0) + 1
 
-    def check_password(self, password):
-        return self.password_hash == self.hash_password(password)
+        new_student = Record(new_id, int(user_id), name, age, group, gpa)
+        db.save_record(new_student)
 
-    def to_dict(self):
-        """Превращает объект в словарь для сохранения в JSON."""
-        return {
-            "id": self.id,
-            "username": self.username,
-            "password_hash": self.password_hash,
-            "role": self.role,
-            "created_at": self.created_at
-        }
+    @staticmethod
+    def get_profile_info(user_id):
+        """
+        Собирает данные для страницы профиля (Task 4): имя, роль, дата создания
+        и общее количество студентов, добавленных этим пользователем.
+        """
+        users = db.load_users()
+        user = next((u for u in users if u.id == int(user_id)), None)
 
-    @classmethod
-    def from_dict(cls, data):
-        """Восстанавливает объект User из словаря JSON."""
-        return cls(
-            user_id=data["id"],
-            username=data["username"],
-            password_hash=data["password_hash"],
-            role=data["role"],
-            created_at=data["created_at"]
-        )
+        if user:
+            my_records_count = len(UserController.get_my_records(user_id))
+            return {
+                "username": user.username,
+                "role": user.role,
+                "created_at": user.created_at,
+                "record_count": my_records_count
+            }
+        return None
+
+    @staticmethod
+    def update_password(user_id, new_password):
+        """
+        Смена пользователем своего пароля с хэшированием в SHA-256.
+        """
+        users = db.load_users()
+        user = next((u for u in users if u.id == int(user_id)), None)
+
+        if user:
+            user.password_hash = User.hash_password(new_password)
+            db.save_user(user)
+            return True
+        return False
